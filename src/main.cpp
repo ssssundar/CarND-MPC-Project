@@ -85,6 +85,9 @@ int main() {
         string event = j[0].get<string>();
         if (event == "telemetry") {
           // j[1] is the data JSON object
+
+          //cout << "j[1] size: " << j[1].size() << endl;
+
           vector<double> ptsx = j[1]["ptsx"];
           vector<double> ptsy = j[1]["ptsy"];
           double px = j[1]["x"];
@@ -98,13 +101,68 @@ int main() {
           * Both are in between [-1, 1].
           *
           */
-          double steer_value;
-          double throttle_value;
+
+          vector <double> x_waypoints;
+          vector <double> y_waypoints;
+
+          /* Shift the reference angle to 90 degrees.
+          *  This helps with keeping a horizontal orientation
+          *  and simplifies the polynomial fit.
+          *  With this shift, we can consider px = py = psi = 0.
+          */
+          for( int i = 0; i < ptsx.size(); i++ ) {
+            double dx = ptsx[i] - px;
+            double dy = ptsy[i] - py;
+            x_waypoints.push_back( dx * cos(-psi) - dy * sin(-psi) );
+            y_waypoints.push_back( dx * sin(-psi) + dy * cos(-psi) );
+          } 
+          
+          double* ptrx = &x_waypoints[0];
+          double* ptry = &y_waypoints[0];
+          Eigen::Map<Eigen::VectorXd> x_waypoints_eig(ptrx, 6); 
+          Eigen::Map<Eigen::VectorXd> y_waypoints_eig(ptry, 6); 
+
+          cout << "1" << endl;
+
+          auto coeffs = polyfit(x_waypoints_eig, y_waypoints_eig, 3);
+
+          cout << coeffs << endl;
+
+          cout << "2" << endl;
+
+          double cte = polyeval(coeffs, 0);
+
+          cout << "3" << endl;
+
+          /* double epsi = psi - atan( coeffs[1] + 2 * px * coeffs[2] + 3 * coeffs[3] * pow(px,2));
+          *  Since px = 0, the above equation gets simplified as follows.
+          */
+          double epsi = -atan(coeffs[1]);
+          
+
+          cout << "3a" << endl;
+          double steer_value = j[1]["steering_angle"];
+          double throttle_value = j[1]["throttle"];
+
+          //double steer_value = 0;
+          //double throttle_value = 0;
+
+          cout << "3b" << endl;
+          Eigen::VectorXd state(6);
+          state << 0, 0, 0, v, cte, epsi;
+
+          cout << "4" << endl;
+       
+          auto vars = mpc.Solve(state, coeffs);
+          steer_value = vars[0];
+          throttle_value = vars[1];
+
+          cout << "5" << endl;
 
           json msgJson;
           // NOTE: Remember to divide by deg2rad(25) before you send the steering value back.
           // Otherwise the values will be in between [-deg2rad(25), deg2rad(25] instead of [-1, 1].
-          msgJson["steering_angle"] = steer_value;
+          msgJson["steering_angle"] = steer_value /(deg2rad(25)); // ???? multiply by Lf here ?????
           msgJson["throttle"] = throttle_value;
 
           //Display the MPC predicted trajectory 
@@ -113,6 +171,17 @@ int main() {
 
           //.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
           // the points in the simulator are connected by a Green line
+          for (int i = 2; i < vars.size(); i++ ) {
+
+            // Every even value is x and odd value is y.
+            if( i % 2 == 0 ) {
+              mpc_x_vals.push_back(vars[i]);
+            }
+            else {
+              mpc_y_vals.push_back(vars[i]);
+            }
+
+          }
 
           msgJson["mpc_x"] = mpc_x_vals;
           msgJson["mpc_y"] = mpc_y_vals;
@@ -123,6 +192,10 @@ int main() {
 
           //.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
           // the points in the simulator are connected by a Yellow line
+          for (double i = 0; i < 100; i += 3 ) {
+            next_x_vals.push_back(i);
+            next_y_vals.push_back(polyeval(coeffs, i));
+          }
 
           msgJson["next_x"] = next_x_vals;
           msgJson["next_y"] = next_y_vals;
