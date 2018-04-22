@@ -21,16 +21,10 @@ double dt = 0.1;
 // This is the length from front to CoG that has a similar radius.
 const double Lf = 2.67;
 
-
 // NOTE: feel free to play around with this
 // or do something completely different
-// 70 worked well.
 double ref_v = 100; 
  
-// The below are values we want to see.
-//double ref_cte = 0; not used 
-//double ref_epsi = 0; not used.
-
 // The solver takes all the state variables and actuator
 // variables in a singular vector. Thus, we should to establish
 // when one variable starts and another ends to make our lifes easier.
@@ -42,7 +36,6 @@ size_t cte_start = v_start + N;
 size_t epsi_start = cte_start + N;
 size_t delta_start = epsi_start + N;
 size_t a_start = delta_start + N - 1;
-
 
 class FG_eval {
  public:
@@ -64,31 +57,31 @@ class FG_eval {
     // Reference State Cost
     // TODO: Define the cost related the reference state and
     // any anything you think may be beneficial.
-    for ( int t = 0; t < N; t++ ) {
+    for ( uint t = 0; t < N; t++ ) {
       /* The coeff 2000 below gives more weight to cte and epsi
       *  compared to speed, which is not multiplied by any coeff.
       */
-      fg[0] += 2000*CppAD::pow(vars[cte_start + t], 2); 
-      fg[0] += 2000*CppAD::pow(vars[epsi_start + t], 2); 
+      fg[0] += 4000*CppAD::pow(vars[cte_start + t], 2); 
+      fg[0] += 4000*CppAD::pow(vars[epsi_start + t], 2); 
       fg[0] += CppAD::pow(vars[v_start + t] - ref_v, 2); 
     }
 
 
     // Minimize the use of actuators / change-rate.
     // This is done to make sure teh turns are smooth not sharp.
-    // Also, teh vehicle velocity shouldn't change too radically.
-    for (int t = 0; t < N - 1; t++ ) {
-      fg[0] += 5*CppAD::pow(vars[delta_start + t], 2); 
-      fg[0] += 5*CppAD::pow(vars[a_start + t], 2); 
+    // Also, the vehicle velocity shouldn't change too radically.
+    for (uint t = 0; t < N - 1; t++ ) {
+      fg[0] += 50*CppAD::pow(vars[delta_start + t], 2); 
+      fg[0] += 50*CppAD::pow(vars[a_start + t], 2); 
       // try adding penalty for speed + steer
       fg[0] += 700*CppAD::pow(vars[delta_start + t]  * vars[v_start + t], 2);
     }
 
 
     // Minimize the value gap between sequential actuations.
-    for (int t = 0; t < N - 2; t ++) {
+    for (uint t = 0; t < N - 2; t ++) {
       // Coeff 200 below, keeps the steering angle smooth and NOT jerky.
-      fg[0] += 200*CppAD::pow(vars[delta_start + t + 1] - vars[delta_start + t] ,2); 
+      fg[0] += 600*CppAD::pow(vars[delta_start + t + 1] - vars[delta_start + t] ,2); 
       fg[0] += 10*CppAD::pow(vars[a_start + t + 1] - vars[a_start + t], 2); 
     }
 
@@ -110,7 +103,7 @@ class FG_eval {
     fg[1 + epsi_start] = vars[epsi_start];
 
     // The rest of the constraints
-    for (int t = 1; t < N; t++) {
+    for (uint t = 1; t < N; t++) {
 
       // The state at time t+1
       AD<double> x1 = vars[x_start + t];
@@ -137,7 +130,6 @@ class FG_eval {
         delta = vars[delta_start + t - 2];
       }
 
-      // Following 2 lines are different in walkthrough video ????
       AD<double> f0 = coeffs[0] + coeffs[1] * x0 + coeffs[2] * CppAD::pow(x0,
 2) + coeffs[3] * CppAD::pow(x0, 3);
 
@@ -173,7 +165,6 @@ MPC::~MPC() {}
 
 vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
   bool ok = true;
-  size_t i;
   typedef CPPAD_TESTVECTOR(double) Dvector;
 
   double x = state[0];
@@ -182,7 +173,6 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
   double v = state[3];
   double cte = state[4];
   double epsi = state[5];
-
 
   // TODO: Set the number of model variables (includes both states and inputs).
   // For example: If the state is a 4 element vector, the actuators is a 2
@@ -194,14 +184,12 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
   // TODO: Set the number of constraints
   size_t n_constraints = N * 6;
 
-
   // Initial value of the independent variables.
   // SHOULD BE 0 besides initial state.
   Dvector vars(n_vars);
-  for (int i = 0; i < n_vars; i++) {
+  for (uint i = 0; i < n_vars; i++) {
     vars[i] = 0.0;
   }
-
 
   // Set the initial variable values
   vars[x_start] = x;
@@ -211,7 +199,6 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
   vars[cte_start] = cte;
   vars[epsi_start] = epsi;
 
-
   Dvector vars_lowerbound(n_vars);
   Dvector vars_upperbound(n_vars);
   // TODO: Set lower and upper limits for variables.
@@ -219,7 +206,7 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
 
   // Set all non-actuators upper and lowerlimits
   // to the max negative and positive values.
-  for (int i = 0; i < delta_start; i++) {
+  for (uint i = 0; i < delta_start; i++) {
     vars_lowerbound[i] = -1.0e19;
     vars_upperbound[i] = 1.0e19;
   }
@@ -228,15 +215,15 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
   // The upper and lower limits of delta are set to -25 and 25
   // degrees (values in radians).
   // NOTE: Feel free to change this to something else.
-  for (int i = delta_start; i < a_start; i++) {
-    vars_lowerbound[i] = -0.436332; //???? *Lf
-    vars_upperbound[i] = 0.436332; //???? *Lf
+  for (uint i = delta_start; i < a_start; i++) {
+    vars_lowerbound[i] = -0.436332; 
+    vars_upperbound[i] = 0.436332; 
   }
 
 
   // Acceleration/decceleration upper and lower limits.
   // NOTE: Feel free to change this to something else.
-  for (int i = a_start; i < n_vars; i++) {
+  for (uint i = a_start; i < n_vars; i++) {
     vars_lowerbound[i] = -1.0;
     vars_upperbound[i] = 1.0;
   }
@@ -246,7 +233,7 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
   // Should be 0 besides initial state.
   Dvector constraints_lowerbound(n_constraints);
   Dvector constraints_upperbound(n_constraints);
-  for (int i = 0; i < n_constraints; i++) {
+  for (uint i = 0; i < n_constraints; i++) {
     constraints_lowerbound[i] = 0;
     constraints_upperbound[i] = 0;
   }
@@ -312,16 +299,11 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
   result.push_back(solution.x[delta_start]);
   result.push_back(solution.x[a_start]);
 
-  for ( int i = 0; i < N - 1; i++ ) {
+  for ( uint i = 0; i < N - 1; i++ ) {
     result.push_back(solution.x[x_start + i + 1]);
     result.push_back(solution.x[y_start + i + 1]);
 
   }
 
   return result;
-
-  //return {solution.x[x_start + 1],   solution.x[y_start + 1],
-    //      solution.x[psi_start + 1], solution.x[v_start + 1],
-      //    solution.x[cte_start + 1], solution.x[epsi_start + 1],
-        //  solution.x[delta_start],   solution.x[a_start]};
 }
